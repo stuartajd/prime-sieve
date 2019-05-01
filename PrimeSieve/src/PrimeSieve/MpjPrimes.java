@@ -1,5 +1,3 @@
-package PrimeSieve;
-
 import mpi.*;
 import java.util.ArrayList;
 
@@ -14,53 +12,65 @@ import java.util.ArrayList;
 */
 
 public class MpjPrimes extends Thread{
-    final static int S = 1; // Start of the sieve
-    final static int N = 10000; // End point should be N
-    static int T, me; // Total number of threads
+    final static int numbers = 100000000; // End point should be N
     
-    final static ArrayList<Integer> primes = new ArrayList<>();
-    final static int total = 0;
-    
+    static int threads, position; // Total number of threads
+        
+    final static ArrayList<Integer> primes = new ArrayList<>();;    
+
     public static void main(String[] args) throws Exception {
         MPI.Init(args);
 
         long startTime = System.currentTimeMillis();
         
-        me = MPI.COMM_WORLD.Rank(); // Position
-        T = MPI.COMM_WORLD.Size(); // Threads
+        position = MPI.COMM_WORLD.Rank(); // Position [0 / 1]
+        threads = MPI.COMM_WORLD.Size(); // Threads [2]
         
-        int begin = me * (N / T);
-        int end = begin + (N / T);
-
-        ArrayList<Integer> prime = new ArrayList<>();
-
+        int begin = position * (numbers / threads);
+        int end = begin + (numbers / threads);
         
+        ArrayList<Integer> temporaryStorage = new ArrayList<>();
         for(int i = begin; i < end; i++){
-            // Goes through all numbers between start and end
             if(isNumberPrime(i)){
-                prime.add(i);
+                temporaryStorage.add(i);
             }
         }
-        
-        if (me > 0) {
-            ArrayList<Integer> sendBuf = new ArrayList<>(prime); 
-            MPI.COMM_WORLD.Send(sendBuf, 0, 1, MPI.DOUBLE, 0, 0);
+       
+        // Send back the length the storage currently is
+        if(position > 0){
+            int[] sendBuf = new int[]{temporaryStorage.size()};
+            MPI.COMM_WORLD.Send(sendBuf, 0, 1, MPI.INT, 0, 1);
+            
+            for(int i = 0; i < temporaryStorage.size(); i++){
+                int[] send = new int[]{temporaryStorage.get(i)};
+                MPI.COMM_WORLD.Send(send, 0, 1, MPI.INT, 0, 0);
+            }
         } else {
-            ArrayList<Integer> recvBuf = new ArrayList<>(prime);
-            for (int src = 1; src < T; src++) {
-                MPI.COMM_WORLD.Recv(recvBuf, 0, 1, MPI.DOUBLE, src, 0);
-                for(int rec = 0; rec < recvBuf.size(); rec++){
-                    primes.add(recvBuf.get(rec));
+            for(int i = 0; i < temporaryStorage.size(); i++){
+                primes.add(temporaryStorage.get(i));
+            }
+            
+            int[] recvBuf = new int[1];
+            for (int src = 1; src < threads; src++) {
+                MPI.COMM_WORLD.Recv(recvBuf, 0, 1, MPI.INT, src, 1);
+                
+                for (int ind = 1; ind <= recvBuf[0]; ind++) {
+                    int[] recv = new int[1];
+                    MPI.COMM_WORLD.Recv(recv, 0, 1, MPI.INT, src, 0);
+                    primes.add(recv[0]);
                 }
             }
         }
+               
+        long endTime = System.currentTimeMillis();   
+         
+        if(position == 0){
+            System.out.println("Calculated "+ numbers +" primes across "+ threads +" threads in " + (endTime - startTime) + "ms (Found: "+ primes.size() + ")");
+        }
         
-        long endTime = System.currentTimeMillis();
-        
-        System.out.println("Calculated "+ N +" primes across "+ T +" threads in " + (endTime - startTime) + "ms (Found: "+ primes.size() + ")");
+        MPI.Finalize();
     }
     
-
     public static boolean isNumberPrime(int number) {  
         if(number <= 1) return false;
         for(int i = 2; i <= Math.sqrt(number); ++i)
@@ -69,14 +79,5 @@ public class MpjPrimes extends Thread{
         }
         
         return true;  
-   }  
-    
-    
-    public static int[] combine(int[] a, int[] b){
-        int length = a.length + b.length;
-        int[] result = new int[length];
-        System.arraycopy(a, 0, result, 0, a.length);
-        System.arraycopy(b, 0, result, a.length, b.length);
-        return result;
-    }
+   }
 }
